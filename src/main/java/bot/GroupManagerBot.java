@@ -4,6 +4,7 @@ import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.groupadministration.BanChatMember;
 import org.telegram.telegrambots.meta.api.methods.groupadministration.RestrictChatMember;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.Chat;
 import org.telegram.telegrambots.meta.api.objects.ChatPermissions;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
@@ -17,7 +18,7 @@ import java.util.List;
 
 public class GroupManagerBot extends TelegramLongPollingBot {
 
-    // TODO: Replace with your actual Bot Username and Token
+    // IMPORTANT: Replace with your actual Bot Username and Token
     private static final String BOT_USERNAME = "testing0_1bot";
     private static final String BOT_TOKEN = "8506848584:AAEOimtxfo2t2rA780WEqtvNR1DSxf4URvY";
 
@@ -33,14 +34,27 @@ public class GroupManagerBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        // Handle New Members
-        if (update.hasMessage() && update.getMessage().getNewChatMembers() != null) {
-            handleNewMembers(update.getMessage());
-        }
+        if (update.hasMessage()) {
+            Message message = update.getMessage();
+            Chat chat = message.getChat();
 
-        // Handle Text Commands
-        if (update.hasMessage() && update.getMessage().hasText()) {
-            handleCommand(update.getMessage());
+            // --- NEW CHECK: Only process updates from groups or supergroups ---
+            if (!chat.isGroupChat() && !chat.isSuperGroupChat()) {
+                // Optionally, you can send a message explaining the bot is for groups
+                /* sendMessage(message.getChatId(), "👋 I am a Group Management Bot and only work in groups!"); */
+                return; 
+            }
+            // --- END NEW CHECK ---
+
+            // Handle New Members
+            if (message.getNewChatMembers() != null) {
+                handleNewMembers(message);
+            }
+
+            // Handle Text Commands
+            if (message.hasText()) {
+                handleCommand(message);
+            }
         }
     }
 
@@ -64,9 +78,9 @@ public class GroupManagerBot extends TelegramLongPollingBot {
 
         // Split command and arguments
         String[] parts = text.split(" ", 2);
-        String command = parts[0].toLowerCase(); // e.g., "/ban"
+        String command = parts[0].toLowerCase();
 
-        // Only allow admins to use admin commands
+        // Admin check is skipped for /start and /help, but applied to moderation commands
         if (isAdminCommand(command) && !isAdmin(chatId, userId)) {
             sendMessage(chatId, "⚠️ You must be an admin to use this command.");
             return;
@@ -96,7 +110,7 @@ public class GroupManagerBot extends TelegramLongPollingBot {
             }
         } catch (TelegramApiException e) {
             e.printStackTrace();
-            sendMessage(chatId, "❌ An error occurred: " + e.getMessage());
+            sendMessage(chatId, "❌ An error occurred (Check Bot's Admin Rights): " + e.getMessage());
         }
     }
 
@@ -130,16 +144,13 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         Long userIdToKick = message.getReplyToMessage().getFrom().getId();
         String userName = message.getReplyToMessage().getFrom().getFirstName();
 
-        // Kick logic: Ban then Unban immediately
+        // 1. Ban (Kick = Ban then Unban immediately)
         BanChatMember banMethod = new BanChatMember();
         banMethod.setChatId(chatId);
         banMethod.setUserId(userIdToKick);
-        // Set 'until date' to current time + 1 min (approx) just to be safe, though unban works differently
-        // Standard "Kick" is Ban followed by UnbanChatMember, but strictly unbanning clears the ban list.
-        // For simplicity here, we just ban. To just kick, you'd unban immediately after.
         execute(banMethod);
         
-        // Unban immediately to allow re-joining
+        // 2. Unban immediately to allow re-joining
         org.telegram.telegrambots.meta.api.methods.groupadministration.UnbanChatMember unban = 
             new org.telegram.telegrambots.meta.api.methods.groupadministration.UnbanChatMember();
         unban.setChatId(chatId);
@@ -169,11 +180,11 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         restrict.setChatId(chatId);
         restrict.setUserId(userIdToMute);
         restrict.setPermissions(permissions);
-        // Mute for 1 hour for demo purposes (use setUntilDate for duration)
+        // Mute for 1 hour 
         restrict.setUntilDate((int) (Instant.now().getEpochSecond() + 3600)); 
 
         execute(restrict);
-        sendMessage(chatId, "V " + userName + " has been muted for 1 hour.");
+        sendMessage(chatId, "🔇 " + userName + " has been muted for 1 hour.");
     }
 
     private void unmuteUser(Message message) throws TelegramApiException {
@@ -186,10 +197,16 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         Long userIdToUnmute = message.getReplyToMessage().getFrom().getId();
         String userName = message.getReplyToMessage().getFrom().getFirstName();
 
+        // Restore all default permissions (Unmute)
         ChatPermissions permissions = new ChatPermissions();
         permissions.setCanSendMessages(true);
         permissions.setCanSendMediaMessages(true);
         permissions.setCanSendOtherMessages(true);
+        permissions.setCanAddWebPagePreviews(true);
+        permissions.setCanChangeInfo(true);
+        permissions.setCanInviteUsers(true);
+        permissions.setCanPinMessages(true);
+
 
         RestrictChatMember restrict = new RestrictChatMember();
         restrict.setChatId(chatId);
@@ -202,6 +219,7 @@ public class GroupManagerBot extends TelegramLongPollingBot {
 
     private void sendHelp(Long chatId) {
         String help = "🤖 **Group Manager Bot Help**\n\n" +
+                      "*Note: Commands only work in groups!*\n\n" +
                       "/ban - Ban a user (Reply to their message)\n" +
                       "/kick - Kick a user (Reply to their message)\n" +
                       "/mute - Mute a user for 1 hour (Reply to their message)\n" +
@@ -216,10 +234,12 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         SendMessage sm = new SendMessage();
         sm.setChatId(chatId.toString());
         sm.setText(text);
+        sm.setParseMode("Markdown"); // Use Markdown for better formatting
         try {
             execute(sm);
         } catch (TelegramApiException e) {
-            e.printStackTrace();
+            // This is where you might see errors like "Forbidden: bot is not an administrator"
+            e.printStackTrace(); 
         }
     }
 
@@ -245,4 +265,4 @@ public class GroupManagerBot extends TelegramLongPollingBot {
             return false;
         }
     }
-          }
+                }
