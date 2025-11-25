@@ -18,8 +18,8 @@ import java.util.List;
 public class GroupManagerBot extends TelegramLongPollingBot {
 
     // TODO: Replace with your actual Bot Username and Token
-    private static final String BOT_USERNAME = "YOUR_BOT_USERNAME";
-    private static final String BOT_TOKEN = "YOUR_BOT_TOKEN";
+    private static final String BOT_USERNAME = "testing0_1bot";
+    private static final String BOT_TOKEN = "8506848584:AAEOimtxfo2t2rA780WEqtvNR1DSxf4URvY";
 
     @Override
     public String getBotUsername() {
