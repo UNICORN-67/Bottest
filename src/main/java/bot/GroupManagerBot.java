@@ -38,13 +38,10 @@ public class GroupManagerBot extends TelegramLongPollingBot {
             Message message = update.getMessage();
             Chat chat = message.getChat();
 
-            // --- NEW CHECK: Only process updates from groups or supergroups ---
+            // Only process updates from groups or supergroups
             if (!chat.isGroupChat() && !chat.isSuperGroupChat()) {
-                // Optionally, you can send a message explaining the bot is for groups
-                /* sendMessage(message.getChatId(), "👋 I am a Group Management Bot and only work in groups!"); */
                 return; 
             }
-            // --- END NEW CHECK ---
 
             // Handle New Members
             if (message.getNewChatMembers() != null) {
@@ -80,7 +77,7 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         String[] parts = text.split(" ", 2);
         String command = parts[0].toLowerCase();
 
-        // Admin check is skipped for /start and /help, but applied to moderation commands
+        // Admin check is applied to moderation commands only
         if (isAdminCommand(command) && !isAdmin(chatId, userId)) {
             sendMessage(chatId, "⚠️ You must be an admin to use this command.");
             return;
@@ -104,6 +101,10 @@ public class GroupManagerBot extends TelegramLongPollingBot {
                 case "/unmute":
                     unmuteUser(message);
                     break;
+                case "/userinfo":
+                case "/id": // Alias for /userinfo
+                    sendUserInfo(message);
+                    break;
                 default:
                     // Ignore unknown commands
                     break;
@@ -114,7 +115,36 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         }
     }
 
-    // --- Command Implementations ---
+    // --- NEW COMMAND IMPLEMENTATION ---
+
+    private void sendUserInfo(Message message) {
+        if (!isReply(message)) {
+            sendMessage(message.getChatId(), "Reply to a user's message with `/userinfo` to get their details.");
+            return;
+        }
+
+        User user = message.getReplyToMessage().getFrom();
+        String firstName = user.getFirstName();
+        String lastName = user.getLastName() != null ? user.getLastName() : "";
+        String username = user.getUserName() != null ? "@" + user.getUserName() : "N/A";
+        Long userId = user.getId();
+        boolean isBot = user.getIsBot();
+        String languageCode = user.getLanguageCode() != null ? user.getLanguageCode() : "N/A";
+
+        String info = String.format(
+            "📝 *User Information*:\n" +
+            "• *Full Name*: %s %s\n" +
+            "• *Username*: %s\n" +
+            "• *User ID (Important)*: `%d`\n" +
+            "• *Is Bot*: %s\n" +
+            "• *Language Code*: %s",
+            firstName, lastName, username, userId, isBot ? "Yes" : "No", languageCode
+        );
+
+        sendMessage(message.getChatId(), info);
+    }
+
+    // --- MODERATION COMMANDS (Unchanged) ---
 
     private void banUser(Message message) throws TelegramApiException {
         if (!isReply(message)) {
@@ -170,7 +200,6 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         Long userIdToMute = message.getReplyToMessage().getFrom().getId();
         String userName = message.getReplyToMessage().getFrom().getFirstName();
 
-        // Restrict permissions (Mute = can't send messages)
         ChatPermissions permissions = new ChatPermissions();
         permissions.setCanSendMessages(false);
         permissions.setCanSendMediaMessages(false);
@@ -180,7 +209,6 @@ public class GroupManagerBot extends TelegramLongPollingBot {
         restrict.setChatId(chatId);
         restrict.setUserId(userIdToMute);
         restrict.setPermissions(permissions);
-        // Mute for 1 hour 
         restrict.setUntilDate((int) (Instant.now().getEpochSecond() + 3600)); 
 
         execute(restrict);
@@ -219,26 +247,26 @@ public class GroupManagerBot extends TelegramLongPollingBot {
 
     private void sendHelp(Long chatId) {
         String help = "🤖 **Group Manager Bot Help**\n\n" +
-                      "*Note: Commands only work in groups!*\n\n" +
-                      "/ban - Ban a user (Reply to their message)\n" +
-                      "/kick - Kick a user (Reply to their message)\n" +
-                      "/mute - Mute a user for 1 hour (Reply to their message)\n" +
+                      "*Note: Commands only work in groups!* Use these by replying to a user's message.\n\n" +
+                      "/userinfo or /id - Get the details (ID, username, etc.) of the replied user.\n" +
+                      "/ban - Ban a user\n" +
+                      "/kick - Kick a user\n" +
+                      "/mute - Mute a user for 1 hour\n" +
                       "/unmute - Unmute a user\n" +
                       "/help - Show this message";
         sendMessage(chatId, help);
     }
 
-    // --- Helper Methods ---
+    // --- Helper Methods (Unchanged) ---
 
     private void sendMessage(Long chatId, String text) {
         SendMessage sm = new SendMessage();
         sm.setChatId(chatId.toString());
         sm.setText(text);
-        sm.setParseMode("Markdown"); // Use Markdown for better formatting
+        sm.setParseMode("Markdown");
         try {
             execute(sm);
         } catch (TelegramApiException e) {
-            // This is where you might see errors like "Forbidden: bot is not an administrator"
             e.printStackTrace(); 
         }
     }
@@ -248,6 +276,7 @@ public class GroupManagerBot extends TelegramLongPollingBot {
     }
 
     private boolean isAdminCommand(String command) {
+        // Updated to exclude /userinfo from requiring admin rights
         return command.equals("/ban") || command.equals("/kick") || command.equals("/mute") || command.equals("/unmute");
     }
 
@@ -265,4 +294,4 @@ public class GroupManagerBot extends TelegramLongPollingBot {
             return false;
         }
     }
-                }
+            }
